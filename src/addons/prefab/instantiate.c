@@ -220,9 +220,12 @@ static void flecs_instantiate_children_inherit(
             world, child, ctx->root_prefab, ctx->root_instance);
 
         int32_t child_row;
-        const ecs_entity_t *i_child = flecs_bulk_new(world, i_table, 
-            &child_id, &diff.added, 1, component_data, false, &child_row, 
+        const ecs_entity_t *i_child = flecs_bulk_new(world, i_table,
+            &child_id, &diff.added, 1, component_data, false, &child_row,
             &diff);
+
+        flecs_prefab_set_instance_origin(
+            world, i_child[0], child, ecs_get_parent(world, child));
 
         flecs_instantiate(world, child, i_child[0], ctx, depth + 1);
     }
@@ -395,6 +398,14 @@ static void flecs_instantiate_children(
     const ecs_entity_t *i_children = flecs_bulk_new(world, i_table, child_ids,
         &diff.added, child_range.count, component_data, false, &child_row, &diff);
 
+    /* Register origin of instance children so that structural prefab changes
+     * can be matched with the instance children they affect. */
+    for (j = 0; j < child_range.count; j ++) {
+        ecs_entity_t prefab_child = children[j + child_range.offset];
+        flecs_prefab_set_instance_origin(world, i_children[j],
+            prefab_child, ecs_get_parent(world, prefab_child));
+    }
+
     flecs_instantiate_sparse(
         world, &child_range, children, i_table, i_children, child_row, false);
 
@@ -406,7 +417,7 @@ static void flecs_instantiate_children(
 
     flecs_wfree_n(world, ecs_entity_t, child_range.count, child_ids);
 error:
-    return;    
+    return;
 }
 
 void flecs_instantiate_dont_fragment(

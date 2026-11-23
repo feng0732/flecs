@@ -382,6 +382,15 @@ void flecs_spawner_instantiate(
 
         flecs_add_non_fragmenting_child_w_records(world, parent, entity, cr, r);
 
+        {
+            ecs_entity_t prefab_child = flecs_entities_get_alive(
+                world, spawn_child->child);
+            ecs_assert(prefab_child != 0, ECS_INTERNAL_ERROR, NULL);
+            flecs_prefab_set_instance_origin(
+                world, entity, prefab_child,
+                ecs_get_parent(world, prefab_child));
+        }
+
         ecs_table_range_t base_range = {
             .table = spawn_r->table,
             .offset = 0,
@@ -434,6 +443,52 @@ void flecs_tree_spawner_fini(
     if (ts) {
         EcsTreeSpawner_free(ts);
         ecs_os_zeromem(ts);
+    }
+}
+
+/* Invalidate the cached tree spawner for a prefab. The spawner is rebuilt (from
+ * the current hierarchy) the next time an instance is created. This also
+ * invalidates the spawner of prefabs that inherit from the prefab. */
+void flecs_tree_spawner_invalidate(
+    ecs_world_t *world,
+    ecs_entity_t prefab)
+{
+    if (!prefab || !ecs_is_alive(world, prefab)) {
+        return;
+    }
+
+    ecs_record_t *r = flecs_entities_get(world, prefab);
+    if (!r || !r->table) {
+        return;
+    }
+
+    flecs_tree_spawner_fini(world, prefab);
+
+    /* Invalidate spawners of prefab variants. */
+    ecs_component_record_t *cr = flecs_components_get(
+        world, ecs_pair(EcsIsA, prefab));
+    if (!cr) {
+        return;
+    }
+
+    ecs_table_cache_iter_t it;
+    if (flecs_table_cache_iter(&cr->cache, &it, EcsTableEmpty|EcsTableNotEmpty)) {
+        const ecs_table_cache_elem_t *elem;
+        while ((elem = flecs_table_cache_next(&it))) {
+            ecs_table_t *table = elem->table;
+            if (!(table->flags & EcsTableIsPrefab)) {
+                continue;
+            }
+
+            const ecs_entity_t *entities = ecs_table_entities(table);
+            int32_t i, count = ecs_table_count(table);
+            for (i = 0; i < count; i ++) {
+                ecs_entity_t e = entities[i];
+                if (e != prefab) {
+                    flecs_tree_spawner_fini(world, e);
+                }
+            }
+        }
     }
 }
 

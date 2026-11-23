@@ -775,7 +775,11 @@ bool ecs_progress(
     ecs_ftime_t user_delta_time)
 {
     ecs_ftime_t delta_time = ecs_frame_begin(world, user_delta_time);
-    
+
+    /* Apply pending structural prefab changes before systems run. This is a
+     * no-op if the frame addon already did this. */
+    flecs_prefab_sync(world);
+
     /* If this is the first frame, run startup systems */
     if (world->info.frame_count_total == 0) {
         flecs_run_startup_systems(world);

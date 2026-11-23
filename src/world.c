@@ -945,6 +945,10 @@ ecs_world_t *ecs_mini(void) {
     }
 
     ecs_map_init(&world->prefab_child_indices, a);
+#ifdef FLECS_PREFAB
+    ecs_map_init(&world->prefab_instance_origins, a);
+    ecs_map_init(&world->prefab_dirty, a);
+#endif
 
     ecs_set_stage_count(world, 1);
     ecs_default_lookup_path[0] = EcsFlecsCore;
@@ -1170,6 +1174,10 @@ int ecs_fini(
     flecs_name_index_fini(&world->symbols);
     ecs_set_stage_count(world, 0);
     ecs_map_fini(&world->prefab_child_indices);
+#ifdef FLECS_PREFAB
+    ecs_map_fini(&world->prefab_instance_origins);
+    ecs_map_fini(&world->prefab_dirty);
+#endif
     flecs_multi_world_fini(world);
     ecs_log_pop_1();
 

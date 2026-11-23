@@ -47,6 +47,11 @@ static void flecs_stage_merge(
         }
     }
 
+    /* Apply structural prefab changes to instances after all command queues
+     * have been flushed, so that the synchronized hierarchy reflects the
+     * operations from all stages. */
+    flecs_prefab_sync(world);
+
     if (measure_frame_time) {
         world->info.merge_time_total += (ecs_ftime_t)ecs_time_measure(&t_start);
     }

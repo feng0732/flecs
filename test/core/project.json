@@ -3114,7 +3114,18 @@
                 "instantiate_children_dont_inherit",
                 "instantiate_children_dont_inherit_nested",
                 "instantiate_children_dont_inherit_prefab_variant",
-                "instantiate_children_change_policy"
+                "instantiate_children_change_policy",
+                "sync_add_child_after_instance",
+                "sync_remove_child_after_instance",
+                "sync_reparent_child_to_other_prefab",
+                "sync_nested_child",
+                "sync_preserves_detached_child",
+                "sync_preserves_override",
+                "sync_idempotent",
+                "sync_empty_hierarchy",
+                "sync_variant_gets_new_base_child",
+                "sync_childof_prefab",
+                "sync_after_merge"
             ]
         }, {
             "id": "World",

@@ -75,15 +75,33 @@ ecs_entity_t flecs_get_prefab_instance_child(
     ecs_entity_t entity,
     ecs_entity_t prefab_child)
 {
+    /* Entities that aren't tracked as prefab children can be passed to this
+     * function by unrelated code paths (for example when looking up the target
+     * of a OneOf relationship during bootstrap). Only entity ids that were
+     * registered in the prefab child index are candidates. */
     ecs_map_val_t *index_ptr = ecs_map_get(
         &world->prefab_child_indices, prefab_child);
-    if (!index_ptr) {
+
+    /* Also check whether the prefab child is tracked as the origin of an
+     * instance child. This is needed when the prefab hierarchy was modified
+     * after instantiation, in which case the index can be stale. Only do this
+     * for entities that are prefabs. */
+    ecs_entity_t cached = 0;
+    if (index_ptr ||
+        (ecs_is_alive(world, prefab_child) &&
+         ecs_owns_id(world, prefab_child, EcsPrefab)))
+    {
+        cached = flecs_prefab_sync_find_instance_child(
+            (ecs_world_t*)world, entity, prefab_child);
+    }
+
+    if (!index_ptr && !cached) {
         return 0;
     }
 
     flecs_assert_entity_valid(world, prefab_child, "get_target");
-    ecs_check(ecs_owns_id(world, prefab_child, EcsPrefab), 
-        ECS_INVALID_OPERATION, 
+    ecs_check(ecs_owns_id(world, prefab_child, EcsPrefab),
+        ECS_INVALID_OPERATION,
         "cannot get target for '%s': entity is not/no longer a prefab",
         flecs_errstr(ecs_id_str(world, prefab_child)));
 
@@ -106,9 +124,13 @@ ecs_entity_t flecs_get_prefab_instance_child(
             flecs_errstr_2(ecs_id_str(world, prefab)));
 #endif
 
+    if (cached) {
+        return cached;
+    }
+
     ecs_component_record_t *childof_cr = flecs_components_get(
         world, ecs_childof(entity));
-    ecs_check(childof_cr != NULL, ECS_INVALID_OPERATION, 
+    ecs_check(childof_cr != NULL, ECS_INVALID_OPERATION,
         "cannot get target for '%s': children of '%s' have changed since "
         "prefab instantiation",
             flecs_errstr(ecs_id_str(world, prefab_child)),

@@ -3036,6 +3036,17 @@ void Prefab_instantiate_children_dont_inherit(void);
 void Prefab_instantiate_children_dont_inherit_nested(void);
 void Prefab_instantiate_children_dont_inherit_prefab_variant(void);
 void Prefab_instantiate_children_change_policy(void);
+void Prefab_sync_add_child_after_instance(void);
+void Prefab_sync_remove_child_after_instance(void);
+void Prefab_sync_reparent_child_to_other_prefab(void);
+void Prefab_sync_nested_child(void);
+void Prefab_sync_preserves_detached_child(void);
+void Prefab_sync_preserves_override(void);
+void Prefab_sync_idempotent(void);
+void Prefab_sync_empty_hierarchy(void);
+void Prefab_sync_variant_gets_new_base_child(void);
+void Prefab_sync_childof_prefab(void);
+void Prefab_sync_after_merge(void);
 
 // Testsuite 'World'
 void World_setup(void);
@@ -15699,8 +15710,40 @@ bake_test_case Prefab_testcases[] = {
     {
         "instantiate_children_change_policy",
         Prefab_instantiate_children_change_policy
-    }
-};
+    }, {
+        "sync_add_child_after_instance",
+        Prefab_sync_add_child_after_instance
+    }, {
+        "sync_remove_child_after_instance",
+        Prefab_sync_remove_child_after_instance
+    }, {
+        "sync_reparent_child_to_other_prefab",
+        Prefab_sync_reparent_child_to_other_prefab
+    }, {
+        "sync_nested_child",
+        Prefab_sync_nested_child
+    }, {
+        "sync_preserves_detached_child",
+        Prefab_sync_preserves_detached_child
+    }, {
+        "sync_preserves_override",
+        Prefab_sync_preserves_override
+    }, {
+        "sync_idempotent",
+        Prefab_sync_idempotent
+    }, {
+        "sync_empty_hierarchy",
+        Prefab_sync_empty_hierarchy
+    }, {
+        "sync_variant_gets_new_base_child",
+        Prefab_sync_variant_gets_new_base_child
+    }, {
+        "sync_childof_prefab",
+        Prefab_sync_childof_prefab
+    }, {
+        "sync_after_merge",
+        Prefab_sync_after_merge
+    }};
 
 bake_test_case World_testcases[] = {
     {
@@ -18951,7 +18994,7 @@ static bake_test_suite suites[] = {
         "Prefab",
         Prefab_setup,
         NULL,
-        231,
+        242,
         Prefab_testcases
     },
     {

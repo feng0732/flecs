@@ -77,6 +77,7 @@ flecs_src = files(
     'src/addons/pipeline/worker.c',
     'src/addons/prefab/instantiate.c',
     'src/addons/prefab/prefab.c',
+    'src/addons/prefab/prefab_sync.c',
     'src/addons/prefab/tree_spawner.c',
     'src/addons/query_dsl/parser.c',
     'src/addons/rest.c',

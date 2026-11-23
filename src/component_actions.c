@@ -295,11 +295,22 @@ static void flecs_actions_on_add_intern(
     ecs_id_t emplace_id)
 {
     ecs_flags32_t diff_flags = diff->added_flags;
+    const ecs_type_t *added = &diff->added;
+
+#ifdef FLECS_PREFAB
+    /* If a child was added to a prefab hierarchy, mark the prefab as dirty so
+     * that the change is synchronized with instances. Done before the early out
+     * for ids without edge flags, and by inspecting the destination table since
+     * newly created entities are appended directly to the table (their diff
+     * doesn't contain the ChildOf pair). */
+    if (table->flags & EcsTableHasChildOf) {
+        flecs_prefab_mark_dirty_for_child_table(world, table);
+    }
+#endif
+
     if (!diff_flags) {
         return;
     }
-
-    const ecs_type_t *added = &diff->added;
 
     if (diff_flags & EcsTableEdgeReparent) {
         flecs_reparent_name_index(world, table, other_table, row, count);
@@ -341,6 +352,14 @@ static void flecs_actions_on_remove_intern(
 {
     const ecs_type_t *removed = &diff->removed;
     ecs_flags32_t diff_flags = diff->removed_flags;
+
+#ifdef FLECS_PREFAB
+    /* If a child was removed from a prefab hierarchy, mark the prefab as dirty
+     * so that the change is synchronized with instances. */
+    if (removed->count) {
+        flecs_prefab_mark_dirty_for_child_diff(world, removed);
+    }
+#endif
 
     if (diff_flags & EcsTableEdgeDontFragment) {
         if (flecs_dont_fragment_on_remove(

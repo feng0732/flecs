@@ -143,6 +143,23 @@ struct ecs_world_t {
     /* Index of prefab children in ordered children vector. Used by ecs_get_target. */
     ecs_map_t prefab_child_indices;
 
+#ifdef FLECS_PREFAB
+    /* Maps instance child to the prefab child it was instantiated from. Used to
+     * synchronize structural prefab changes with existing instances. */
+    ecs_map_t prefab_instance_origins;
+
+    /* Prefabs that have structural changes which aren't synchronized with
+     * their instances yet. */
+    ecs_map_t prefab_dirty;
+
+    /* True if there are prefabs with pending structural changes. */
+    bool prefab_sync_pending;
+
+    /* True while prefab hierarchies are being synchronized. Prevents
+     * synchronization from recursively synchronizing. */
+    bool prefab_sync_active;
+#endif
+
     /* Internal callback for command inspection. Only one callback can be set at
      * a time. After assignment, the action will become active at the start of
      * the next frame, set by ecs_frame_begin, and will be reset by

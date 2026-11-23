@@ -1353,6 +1353,13 @@ void ecs_delete(
                 "cannot delete entity '%s' with (OnDelete, Panic) trait",
                     flecs_errstr(ecs_get_path(world, entity)));
 
+#ifdef FLECS_PREFAB
+        /* Deleting a prefab child can invalidate cached prefab hierarchy data
+         * (the tree spawner keeps references to the tables that the child lives
+         * in). Synchronize pending changes and release the cached data first. */
+        flecs_prefab_on_delete(world, entity);
+#endif
+
         flecs_journal_begin(world, EcsJournalDelete, entity, NULL, NULL);
 
         ecs_flags32_t row_flags = ECS_RECORD_TO_ROW_FLAGS(r->row);

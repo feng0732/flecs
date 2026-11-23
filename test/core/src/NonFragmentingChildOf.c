@@ -7306,8 +7306,6 @@ void NonFragmentingChildOf_prefab_parent_w_mixed_childof(void) {
 }
 
 void NonFragmentingChildOf_instantiate_tree_after_add_child(void) {
-    install_test_abort();
-
     ecs_world_t *world = ecs_mini();
 
     ecs_entity_t p = ecs_new_w_id(world, EcsPrefab);
@@ -7320,8 +7318,24 @@ void NonFragmentingChildOf_instantiate_tree_after_add_child(void) {
         test_assert(ecs_has_pair(world, entities.ids[0], EcsIsA, p_a));
     }
 
-    test_expect_abort();
-    ecs_new_w_parent(world, p, "child_b");
+    /* Adding a child to an instantiated prefab is synchronized with existing
+     * instances at the next sync point. */
+    ecs_entity_t p_b = ecs_new_w_parent(world, p, "child_b");
+    test_assert(p_b != 0);
+    test_assert(ecs_prefab_sync_pending(world));
+
+    ecs_prefab_sync(world);
+    test_assert(!ecs_prefab_sync_pending(world));
+
+    {
+        ecs_entities_t entities = ecs_get_ordered_children(world, i1);
+        test_int(entities.count, 2);
+        test_assert(ecs_has_pair(world, entities.ids[0], EcsIsA, p_a));
+        test_assert(ecs_has_pair(world, entities.ids[1], EcsIsA, p_b));
+        test_uint(ecs_get_target(world, i1, p_b, 0), entities.ids[1]);
+    }
+
+    ecs_fini(world);
 }
 
 static int childof_w_wildcard_event_observer_invoked = 0;

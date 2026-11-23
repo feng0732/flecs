@@ -141,6 +141,10 @@ ecs_ftime_t ecs_frame_begin(
 
     ecs_run_aperiodic(world, 0);
 
+    /* Apply pending structural prefab changes before systems run, so that all
+     * systems observe the same hierarchy. */
+    flecs_prefab_sync(world);
+
     world->flags |= EcsWorldFrameInProgress;
 
     return world->info.delta_time;

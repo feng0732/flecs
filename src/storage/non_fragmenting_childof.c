@@ -46,12 +46,12 @@ void flecs_add_non_fragmenting_child_w_records(
 
     flecs_ordered_entities_append(world, cr, entity);
     flecs_non_fragmenting_childof_count(world, cr, r->table, 1);
-    flecs_tree_spawner_assert_not_instantiated(world, parent);
 
 #ifdef FLECS_PREFAB
     ecs_record_t *r_parent = flecs_entities_get(world, parent);
     if (r_parent->table->flags & EcsTableIsPrefab) {
         ecs_add_id(ecs_get_stage(world, 0), entity, EcsPrefab);
+        flecs_prefab_mark_dirty(world, parent);
     }
 #endif
 }
@@ -72,7 +72,10 @@ static ecs_component_record_t* flecs_remove_non_fragmenting_child(
 
     flecs_ordered_entities_remove(world, cr, entity);
     flecs_non_fragmenting_childof_count(world, cr, r->table, -1);
-    flecs_tree_spawner_assert_not_instantiated(world, parent);
+
+#ifdef FLECS_PREFAB
+    flecs_prefab_mark_dirty(world, parent);
+#endif
 
     return cr;
 }
@@ -266,7 +269,9 @@ void flecs_non_fragmenting_childof_move(
 
         flecs_ordered_entities_remove(world, cr, e);
 
-        flecs_tree_spawner_assert_not_instantiated(world, p);
+#ifdef FLECS_PREFAB
+        flecs_prefab_mark_dirty(world, p);
+#endif
 
         if (names) {
             flecs_on_reparent_update_name(world, e, &names[i], p, cr_name_dst);

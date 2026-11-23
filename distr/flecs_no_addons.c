@@ -2108,6 +2108,20 @@ void flecs_fini_prefab(
     ecs_world_t *world);
 
 #define flecs_tree_spawner_fini(world, parent)
+#define flecs_prefab_sync(world)
+#define flecs_prefab_sync_one(world, prefab)
+#define flecs_prefab_mark_dirty(world, prefab)
+#define flecs_prefab_mark_dirty_for_child_diff(world, ids)
+#define flecs_prefab_mark_dirty_for_child_table(world, table)
+#define flecs_prefab_on_delete(world, entity)
+#define flecs_prefab_set_instance_origin(world, ic, pc, pp)
+#define flecs_prefab_remove_instance_origin(world, ic)
+#define flecs_prefab_get_instance_origin(world, ic) (0)
+#define flecs_prefab_is_dirty(world, prefab) (false)
+#define flecs_instantiate_child(world, p, i, pc) (0)
+#define flecs_prefab_sync_children(world, p, out) (0)
+#define flecs_prefab_sync_find_instance_child(world, i, pc) (0)
+#define flecs_tree_spawner_invalidate(world, prefab)
 
 #endif
 
@@ -5999,11 +6013,11 @@ static void flecs_actions_on_add_intern(
     ecs_id_t emplace_id)
 {
     ecs_flags32_t diff_flags = diff->added_flags;
+    const ecs_type_t *added = &diff->added;
+
     if (!diff_flags) {
         return;
     }
-
-    const ecs_type_t *added = &diff->added;
 
     if (diff_flags & EcsTableEdgeReparent) {
         flecs_reparent_name_index(world, table, other_table, row, count);
@@ -18161,6 +18175,11 @@ static void flecs_stage_merge(
         }
     }
 
+    /* Apply structural prefab changes to instances after all command queues
+     * have been flushed, so that the synchronized hierarchy reflects the
+     * operations from all stages. */
+    flecs_prefab_sync(world);
+
     if (measure_frame_time) {
         world->info.merge_time_total += (ecs_ftime_t)ecs_time_measure(&t_start);
     }
@@ -28319,7 +28338,6 @@ void flecs_add_non_fragmenting_child_w_records(
 
     flecs_ordered_entities_append(world, cr, entity);
     flecs_non_fragmenting_childof_count(world, cr, r->table, 1);
-    flecs_tree_spawner_assert_not_instantiated(world, parent);
 
 }
 
@@ -28339,7 +28357,6 @@ static ecs_component_record_t* flecs_remove_non_fragmenting_child(
 
     flecs_ordered_entities_remove(world, cr, entity);
     flecs_non_fragmenting_childof_count(world, cr, r->table, -1);
-    flecs_tree_spawner_assert_not_instantiated(world, parent);
 
     return cr;
 }
@@ -28532,8 +28549,6 @@ void flecs_non_fragmenting_childof_move(
         }
 
         flecs_ordered_entities_remove(world, cr, e);
-
-        flecs_tree_spawner_assert_not_instantiated(world, p);
 
         if (names) {
             flecs_on_reparent_update_name(world, e, &names[i], p, cr_name_dst);
@@ -28766,6 +28781,7 @@ void flecs_ordered_children_reparent(
         for (i = 0; i < count; i ++) {
             flecs_ordered_entities_append(world, cr, entities[i]);
         }
+
     }
 }
 
@@ -28780,6 +28796,7 @@ void flecs_ordered_children_unparent(
 
     flecs_ordered_entities_remove_range(world, src,
         &ecs_table_entities(src)[row], count);
+
 }
 
 void flecs_ordered_children_reorder(
@@ -28839,6 +28856,7 @@ void flecs_ordered_children_reorder(
 
     /* The actual operation. */
     ecs_os_memcpy_n(parent_children, children, ecs_entity_t, child_count);
+
 error:
     return;
 }
@@ -34301,6 +34319,22 @@ ecs_entity_t flecs_get_prefab_instance_child(
     (void)entity;
     (void)prefab_child;
     return 0;
+}
+
+/* Public API stubs. The internal flecs_prefab_* functions are provided as
+ * macros by prefab.h when FLECS_PREFAB is disabled, so no definitions are
+ * needed for them (defining them would collide with the macros). */
+void ecs_prefab_sync(
+    ecs_world_t *world)
+{
+    (void)world;
+}
+
+bool ecs_prefab_sync_pending(
+    const ecs_world_t *world)
+{
+    (void)world;
+    return false;
 }
 
 #ifdef FLECS_DEBUG

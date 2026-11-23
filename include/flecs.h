@@ -3648,6 +3648,39 @@ int32_t ecs_get_depth(
     ecs_entity_t entity,
     ecs_entity_t rel);
 
+#ifdef FLECS_PREFAB
+/** Synchronize structural prefab changes with existing instances.
+ * When the hierarchy of a prefab is modified after instances have been created
+ * (children added, removed or reparented), the changes are applied to all
+ * existing instances at well defined sync points: when the world is merged
+ * (ecs_merge(), the end of a readonly period), at the start of a frame, and
+ * when this function is called explicitly.
+ *
+ * Only instance children that were created by prefab instantiation are
+ * affected. Children that are explicitly detached from an instance, and
+ * components that are explicitly overridden on an instance are preserved.
+ * Children created by the application are never touched.
+ *
+ * Synchronization is idempotent: calling it multiple times has the same result
+ * as calling it once.
+ *
+ * @param world The world.
+ */
+FLECS_API
+void ecs_prefab_sync(
+    ecs_world_t *world);
+
+/** Return whether there are prefab structural changes that haven't been
+ * synchronized with instances yet.
+ *
+ * @param world The world.
+ * @return True if synchronization is pending, false otherwise.
+ */
+FLECS_API
+bool ecs_prefab_sync_pending(
+    const ecs_world_t *world);
+#endif
+
 /** Count entities that have the specified ID.
  * Return the number of entities that have the specified ID.
  *

@@ -1629,7 +1629,6 @@ void OrderedChildren_prefab_w_nested_ordered_children_2(void) {
 }
 
 void OrderedChildren_prefab_get_target_after_reorder(void) {
-    install_test_abort();
     ecs_world_t *world = ecs_mini();
 
     ecs_entity_t p = ecs_new_w_id(world, EcsPrefab);
@@ -1644,8 +1643,14 @@ void OrderedChildren_prefab_get_target_after_reorder(void) {
     ecs_entity_t children[] = {pc3, pc1, pc2};
     ecs_set_child_order(world, p, children, 3);
 
-    test_expect_abort();
-    ecs_get_target(world, i, pc1, 0);
+    /* Reordering the children of a prefab is synchronized with instances:
+     * the instance children are still resolvable through their prefab
+     * child. */
+    test_assert(ecs_get_target(world, i, pc1, 0) != 0);
+    test_assert(ecs_get_target(world, i, pc2, 0) != 0);
+    test_assert(ecs_get_target(world, i, pc3, 0) != 0);
+
+    ecs_fini(world);
 }
 
 void OrderedChildren_recreate_named_child(void) {

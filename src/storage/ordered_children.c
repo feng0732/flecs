@@ -86,9 +86,11 @@ void flecs_ordered_entities_append(
             flecs_ito(uint64_t, ecs_vec_count(vec) - 1);
 #ifdef FLECS_PREFAB
     } else {
+        ecs_entity_t parent = ecs_pair_second(world, cr->id);
         ecs_assert(
-            !ecs_owns_id(world, ecs_pair_second(world, cr->id), EcsPrefab),
+            !ecs_owns_id(world, parent, EcsPrefab),
             ECS_INTERNAL_ERROR, NULL);
+        (void)parent;
 #endif
     }
 }
@@ -161,12 +163,29 @@ void flecs_ordered_children_reparent(
         flecs_ordered_entities_remove_range(world, src, entities, count);
     }
 
+#ifdef FLECS_PREFAB
+    if (src && (src->flags & EcsTableHasOrderedChildren)) {
+        ecs_component_record_t *src_cr = flecs_table_get_childof_cr(
+            world, src);
+        if (src_cr) {
+            flecs_prefab_mark_dirty(world, ecs_pair_second(world, src_cr->id));
+        }
+    }
+#endif
+
     if (dst->flags & EcsTableHasOrderedChildren) {
         ecs_component_record_t *cr = flecs_table_get_childof_cr(world, dst);
         int32_t i;
         for (i = 0; i < count; i ++) {
             flecs_ordered_entities_append(world, cr, entities[i]);
         }
+
+#ifdef FLECS_PREFAB
+        {
+            ecs_entity_t dst_parent = ecs_pair_second(world, cr->id);
+            flecs_prefab_mark_dirty(world, dst_parent);
+        }
+#endif
     }
 }
 
@@ -181,6 +200,15 @@ void flecs_ordered_children_unparent(
 
     flecs_ordered_entities_remove_range(world, src,
         &ecs_table_entities(src)[row], count);
+
+#ifdef FLECS_PREFAB
+    {
+        ecs_component_record_t *cr = flecs_table_get_childof_cr(world, src);
+        if (cr) {
+            flecs_prefab_mark_dirty(world, ecs_pair_second(world, cr->id));
+        }
+    }
+#endif
 }
 
 void flecs_ordered_children_reorder(
@@ -240,6 +268,12 @@ void flecs_ordered_children_reorder(
 
     /* The actual operation. */
     ecs_os_memcpy_n(parent_children, children, ecs_entity_t, child_count);
+
+#ifdef FLECS_PREFAB
+    /* Reordering the children of a prefab changes the hierarchy of instances,
+     * so mark the prefab for synchronization. */
+    flecs_prefab_mark_dirty(world, parent);
+#endif
 error:
     return;
 }
