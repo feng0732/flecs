@@ -269,7 +269,10 @@ static void flecs_table_init_flags(
         } else if (id == EcsPrefab) {
             table->flags |= EcsTableIsPrefab;
 #endif
-        } else if (id == EcsDisabled) {
+        } else if (id == EcsDisabled || id == EcsDisabledInherited) {
+            /* Entities with EcsDisabledInherited are disabled by an ancestor,
+             * and must be filtered out by queries/systems in the same way as
+             * entities that have the EcsDisabled tag. */
             table->flags |= EcsTableIsDisabled;
         } else if (id == EcsNotQueryable) {
             table->flags |= EcsTableNotQueryable;

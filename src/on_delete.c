@@ -484,6 +484,7 @@ static void flecs_remove_from_table(
         ecs_flags32_t removed_flags = table->flags & EcsTableRemoveEdgeFlags;
         int32_t d = 0, r = 0;
         bool removed_isa = false;
+        bool removed_enabled_state = false;
         for (t = 0; t < type_count; t ++) {
             ecs_id_t id = type->array[t];
             if (remove[t]) {
@@ -495,6 +496,8 @@ static void flecs_remove_from_table(
                     } else if (first == EcsIsA) {
                         removed_isa = true;
                     }
+                } else if (id == EcsDisabled || id == EcsDisabledInherited) {
+                    removed_enabled_state = true;
                 }
             } else {
                 dst_array[d ++] = id;
@@ -523,11 +526,34 @@ static void flecs_remove_from_table(
                 .removed_flags = removed_flags
             };
 
-            flecs_actions_move_remove(world, table, dst_table, 0, table_count, &diff, 0);
+            flecs_actions_move_remove(world, table, dst_table, 0, table_count,
+                &diff, 0);
             ecs_log_pop_3();
         }
 
-        flecs_table_merge(world, dst_table, table);
+        if (removed_enabled_state) {
+            /* Copy entity ids before merging: the merge moves the entities to
+             * the destination table, after which their effective enabled state
+             * has to be recomputed. */
+            int32_t e, entity_count = table_count;
+            ecs_entity_t *entities = flecs_walloc_n(
+                world, ecs_entity_t, entity_count);
+            ecs_os_memcpy_n(entities, ecs_table_entities(table),
+                ecs_entity_t, entity_count);
+
+            flecs_table_merge(world, dst_table, table);
+
+            for (e = 0; e < entity_count; e ++) {
+                ecs_record_t *rec = flecs_entities_try(world, entities[e]);
+                if (rec && rec->table) {
+                    flecs_update_enabled_state(world, entities[e]);
+                }
+            }
+
+            flecs_wfree_n(world, ecs_entity_t, entity_count, entities);
+        } else {
+            flecs_table_merge(world, dst_table, table);
+        }
 
         flecs_wfree_n(world, ecs_id_t, dst_count, dst_array);
         flecs_wfree_n(world, ecs_id_t, remove_count, removed);

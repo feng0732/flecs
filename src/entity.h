@@ -139,6 +139,33 @@ void flecs_add_id_now(
     ecs_entity_t entity,
     ecs_id_t component);
 
+/* Returns whether the entity is effectively enabled, which means that neither
+ * the entity nor any of its ancestors has the EcsDisabled tag. */
+bool flecs_entity_is_enabled(
+    const ecs_world_t *world,
+    ecs_entity_t entity);
+
+/* Recompute the inherited disabled state of an entity and propagate it to its
+ * children. */
+void flecs_update_enabled_state(
+    ecs_world_t *world,
+    ecs_entity_t entity);
+
+/* Propagate the effective enabled state after entities were moved by an
+ * operation described by the table diff. Does nothing if the diff doesn't
+ * affect the enabled state of a hierarchy. */
+void flecs_propagate_enabled_state(
+    ecs_world_t *world,
+    const ecs_entity_t *entities,
+    int32_t count,
+    const ecs_table_diff_t *diff,
+    ecs_flags32_t evt_flags);
+
+/* Test whether a table diff adds or removes an id that can change the effective
+ * enabled state of an entity or a subtree. */
+bool flecs_diff_affects_enabled_state(
+    const ecs_table_diff_t *diff);
+
 void flecs_remove_id_now(
     ecs_world_t *world,
     ecs_entity_t entity,

@@ -212,7 +212,14 @@
                 "entity_w_existing_id_and_double_dot",
                 "entity_w_large_id_name",
                 "toggle_component",
-                "toggle_component_before_add"
+                "toggle_component_before_add",
+                "enable_parent_disables_children",
+                "enable_parent_keeps_local_state",
+                "enable_nested",
+                "enable_created_while_parent_disabled",
+                "enable_move_into_disabled_parent",
+                "enable_move_disabled_child_into_enabled_parent",
+                "disable_inherited_from_parent"
             ]
         }, {
             "id": "Each",

@@ -111,6 +111,10 @@ struct ecs_world_t {
 
     int32_t flush_depth;
 
+    /* Set while propagating the effective enabled state through a hierarchy.
+     * Used to prevent re-entrant propagation from the table move actions. */
+    bool in_enable_propagation;
+
     /* Array of table versions used with component refs to determine if the 
      * cached pointer is still valid. */
     uint32_t table_version[ECS_TABLE_VERSION_ARRAY_SIZE];

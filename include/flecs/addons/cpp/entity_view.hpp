@@ -131,11 +131,22 @@ struct entity_view : public id {
         return path_from(_::type<Parent>::id(world_), sep, init_sep);
     }
 
-    /** Check if entity is enabled (does not have the Disabled tag).
+    /** Check if entity is enabled.
+     * An entity is enabled when it does not have the Disabled tag, and is not
+     * disabled by an ancestor in the ChildOf hierarchy.
      *
      * @return True if the entity is enabled, false otherwise.
      */
     bool enabled() const {
+        return ecs_is_enabled_entity(world_, id_);
+    }
+
+    /** Check if entity is locally enabled (does not have the Disabled tag).
+     * Unlike enabled(), this does not take the state of ancestors into account.
+     *
+     * @return True if the entity is locally enabled, false otherwise.
+     */
+    bool enabled_self() const {
         return !ecs_has_id(world_, id_, flecs::Disabled);
     }
 

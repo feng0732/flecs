@@ -2327,3 +2327,198 @@ void Entity_toggle_component_before_add(void) {
 
     ecs_fini(world);
 }
+
+void Entity_enable_parent_disables_children(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t c1 = ecs_entity(world, { .name = "c1", .parent = p });
+    ecs_entity_t c2 = ecs_entity(world, { .name = "c2", .parent = p });
+
+    test_assert(ecs_is_enabled_entity(world, p));
+    test_assert(ecs_is_enabled_entity(world, c1));
+    test_assert(ecs_is_enabled_entity(world, c2));
+
+    ecs_enable(world, p, false);
+
+    test_assert(!ecs_is_enabled_entity(world, p));
+    test_assert(!ecs_is_enabled_entity(world, c1));
+    test_assert(!ecs_is_enabled_entity(world, c2));
+    test_assert(ecs_has_id(world, c1, EcsDisabledInherited));
+    test_assert(ecs_has_id(world, c2, EcsDisabledInherited));
+    test_assert(!ecs_has_id(world, c1, EcsDisabled));
+    test_assert(!ecs_has_id(world, c2, EcsDisabled));
+
+    ecs_enable(world, p, true);
+
+    test_assert(ecs_is_enabled_entity(world, p));
+    test_assert(ecs_is_enabled_entity(world, c1));
+    test_assert(ecs_is_enabled_entity(world, c2));
+    test_assert(!ecs_has_id(world, c1, EcsDisabledInherited));
+    test_assert(!ecs_has_id(world, c2, EcsDisabledInherited));
+
+    ecs_fini(world);
+}
+
+void Entity_enable_parent_keeps_local_state(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t c1 = ecs_entity(world, { .name = "c1", .parent = p });
+    ecs_entity_t c2 = ecs_entity(world, { .name = "c2", .parent = p });
+
+    /* Locally disable c1 */
+    ecs_enable(world, c1, false);
+    test_assert(ecs_has_id(world, c1, EcsDisabled));
+    test_assert(ecs_is_enabled_entity(world, c2));
+
+    ecs_enable(world, p, false);
+    test_assert(!ecs_is_enabled_entity(world, p));
+    test_assert(!ecs_is_enabled_entity(world, c1));
+    test_assert(!ecs_is_enabled_entity(world, c2));
+
+    /* c1 stays locally disabled, c2 is disabled by its parent */
+    test_assert(ecs_has_id(world, c1, EcsDisabled));
+    test_assert(!ecs_has_id(world, c1, EcsDisabledInherited));
+    test_assert(!ecs_has_id(world, c2, EcsDisabled));
+    test_assert(ecs_has_id(world, c2, EcsDisabledInherited));
+
+    /* Enabling the parent must not enable c1 */
+    ecs_enable(world, p, true);
+    test_assert(ecs_is_enabled_entity(world, p));
+    test_assert(!ecs_is_enabled_entity(world, c1));
+    test_assert(ecs_is_enabled_entity(world, c2));
+    test_assert(ecs_has_id(world, c1, EcsDisabled));
+
+    ecs_fini(world);
+}
+
+void Entity_enable_nested(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t c = ecs_entity(world, { .name = "c", .parent = p });
+    ecs_entity_t g = ecs_entity(world, { .name = "g", .parent = c });
+    ecs_entity_t gg = ecs_entity(world, { .name = "gg", .parent = g });
+
+    ecs_enable(world, p, false);
+
+    test_assert(!ecs_is_enabled_entity(world, c));
+    test_assert(!ecs_is_enabled_entity(world, g));
+    test_assert(!ecs_is_enabled_entity(world, gg));
+    test_assert(ecs_has_id(world, g, EcsDisabledInherited));
+    test_assert(ecs_has_id(world, gg, EcsDisabledInherited));
+
+    ecs_enable(world, p, true);
+
+    test_assert(ecs_is_enabled_entity(world, c));
+    test_assert(ecs_is_enabled_entity(world, g));
+    test_assert(ecs_is_enabled_entity(world, gg));
+
+    /* Disable in the middle of the hierarchy */
+    ecs_enable(world, g, false);
+    test_assert(ecs_is_enabled_entity(world, c));
+    test_assert(!ecs_is_enabled_entity(world, g));
+    test_assert(!ecs_is_enabled_entity(world, gg));
+
+    ecs_enable(world, g, true);
+    test_assert(ecs_is_enabled_entity(world, g));
+    test_assert(ecs_is_enabled_entity(world, gg));
+
+    ecs_fini(world);
+}
+
+void Entity_enable_created_while_parent_disabled(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_enable(world, p, false);
+
+    ecs_entity_t c1 = ecs_entity(world, { .name = "c1", .parent = p });
+    test_assert(!ecs_is_enabled_entity(world, c1));
+    test_assert(ecs_has_id(world, c1, EcsDisabledInherited));
+
+    ecs_entity_t c2 = ecs_new_w_parent(world, p, NULL);
+    test_assert(!ecs_is_enabled_entity(world, c2));
+    test_assert(ecs_has_id(world, c2, EcsDisabledInherited));
+
+    /* A locally disabled child that's created while the parent is disabled */
+    ecs_entity_t c3 = ecs_entity(world, { .name = "c3", .parent = p });
+    ecs_enable(world, c3, false);
+    test_assert(ecs_has_id(world, c3, EcsDisabled));
+    test_assert(!ecs_has_id(world, c3, EcsDisabledInherited));
+
+    ecs_enable(world, p, true);
+
+    test_assert(ecs_is_enabled_entity(world, c1));
+    test_assert(ecs_is_enabled_entity(world, c2));
+    test_assert(!ecs_is_enabled_entity(world, c3));
+
+    ecs_fini(world);
+}
+
+void Entity_enable_move_into_disabled_parent(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t other = ecs_new(world);
+    ecs_entity_t child = ecs_entity(world, { .name = "child", .parent = other });
+
+    test_assert(ecs_is_enabled_entity(world, child));
+
+    ecs_enable(world, p, false);
+
+    /* Move the child under the disabled parent */
+    ecs_add_pair(world, child, EcsChildOf, p);
+    test_assert(!ecs_is_enabled_entity(world, child));
+    test_assert(ecs_has_id(world, child, EcsDisabledInherited));
+
+    /* Move the child out again */
+    ecs_add_pair(world, child, EcsChildOf, other);
+    test_assert(ecs_is_enabled_entity(world, child));
+    test_assert(!ecs_has_id(world, child, EcsDisabledInherited));
+
+    ecs_fini(world);
+}
+
+void Entity_enable_move_disabled_child_into_enabled_parent(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t other = ecs_new(world);
+    ecs_entity_t child = ecs_entity(world, { .name = "child", .parent = p });
+
+    ecs_enable(world, p, false);
+    test_assert(!ecs_is_enabled_entity(world, child));
+    test_assert(ecs_has_id(world, child, EcsDisabledInherited));
+
+    /* Move the disabled child under an enabled parent */
+    ecs_add_pair(world, child, EcsChildOf, other);
+    test_assert(ecs_is_enabled_entity(world, child));
+    test_assert(!ecs_has_id(world, child, EcsDisabledInherited));
+
+    ecs_fini(world);
+}
+
+void Entity_disable_inherited_from_parent(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_entity_t p = ecs_new(world);
+    ecs_entity_t c = ecs_entity(world, { .name = "c", .parent = p });
+
+    ecs_enable(world, p, false);
+    test_assert(!ecs_is_enabled_entity(world, c));
+
+    /* Enabling a child that is disabled by its parent must not make it
+     * effectively enabled as long as the parent is disabled. */
+    ecs_enable(world, c, true);
+    test_assert(!ecs_is_enabled_entity(world, c));
+    test_assert(ecs_has_id(world, c, EcsDisabledInherited));
+    test_assert(!ecs_has_id(world, c, EcsDisabled));
+
+    ecs_enable(world, p, true);
+    test_assert(ecs_is_enabled_entity(world, c));
+    test_assert(!ecs_has_id(world, c, EcsDisabledInherited));
+
+    ecs_fini(world);
+}

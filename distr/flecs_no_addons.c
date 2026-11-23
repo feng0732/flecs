@@ -2018,6 +2018,33 @@ void flecs_add_id_now(
     ecs_entity_t entity,
     ecs_id_t component);
 
+/* Returns whether the entity is effectively enabled, which means that neither
+ * the entity nor any of its ancestors has the EcsDisabled tag. */
+bool flecs_entity_is_enabled(
+    const ecs_world_t *world,
+    ecs_entity_t entity);
+
+/* Recompute the inherited disabled state of an entity and propagate it to its
+ * children. */
+void flecs_update_enabled_state(
+    ecs_world_t *world,
+    ecs_entity_t entity);
+
+/* Propagate the effective enabled state after entities were moved by an
+ * operation described by the table diff. Does nothing if the diff doesn't
+ * affect the enabled state of a hierarchy. */
+void flecs_propagate_enabled_state(
+    ecs_world_t *world,
+    const ecs_entity_t *entities,
+    int32_t count,
+    const ecs_table_diff_t *diff,
+    ecs_flags32_t evt_flags);
+
+/* Test whether a table diff adds or removes an id that can change the effective
+ * enabled state of an entity or a subtree. */
+bool flecs_diff_affects_enabled_state(
+    const ecs_table_diff_t *diff);
+
 void flecs_remove_id_now(
     ecs_world_t *world,
     ecs_entity_t entity,
@@ -2658,6 +2685,10 @@ struct ecs_world_t {
     int32_t event_id;
 
     int32_t flush_depth;
+
+    /* Set while propagating the effective enabled state through a hierarchy.
+     * Used to prevent re-entrant propagation from the table move actions. */
+    bool in_enable_propagation;
 
     /* Array of table versions used with component refs to determine if the 
      * cached pointer is still valid. */
@@ -3829,6 +3860,7 @@ void flecs_bootstrap(
 
     flecs_bootstrap_tag(world, EcsModule);
     flecs_bootstrap_tag(world, EcsDisabled);
+    flecs_bootstrap_tag(world, EcsDisabledInherited);
     flecs_bootstrap_tag(world, EcsNotQueryable);
     flecs_bootstrap_tag(world, EcsEmpty);
 
@@ -6926,6 +6958,13 @@ static void flecs_move_entity(
     }
 
     ecs_assert(record->table == dst_table, ECS_INTERNAL_ERROR, NULL);
+
+    /* After the entity has been moved, propagate its effective enabled state to
+     * its descendants. This must happen after the move completes, as the
+     * propagation can move entities (including the moved entity) to different
+     * tables. */
+    flecs_propagate_enabled_state(
+        world, &entity, 1, diff, evt_flags);
 }
 
 void flecs_commit(
@@ -9301,6 +9340,15 @@ ecs_entity_t ecs_new_w_parent(
     flecs_notify_on_set(
         world, table, row, ecs_id(EcsParent), true, parent_ptr);
 
+    /* When the entity is created directly in a table (which bypasses the
+     * regular move actions), make sure it inherits the disabled state of its
+     * parent. Do this after the child was registered with its parent. */
+    if (ecs_has_id(world, parent, EcsDisabled) ||
+        ecs_has_id(world, parent, EcsDisabledInherited))
+    {
+        flecs_update_enabled_state(world, entity);
+    }
+
     flecs_commands_end(world, stage);
     return entity;
 error:
@@ -9648,6 +9696,287 @@ error:
     return NULL;
 }
 
+static bool flecs_entity_has_disabled(
+    const ecs_world_t *world,
+    ecs_record_t *r)
+{
+    ecs_table_t *table = r->table;
+    return ecs_table_has_id(world, table, EcsDisabled) ||
+        ecs_table_has_id(world, table, EcsDisabledInherited);
+}
+
+/* Returns the parent of an entity without traversing for invalid entities. */
+static ecs_entity_t flecs_entity_get_parent_safe(
+    const ecs_world_t *world,
+    ecs_record_t *r)
+{
+    ecs_table_t *table = r->table;
+    if (!table) {
+        return 0;
+    }
+
+    if (table->flags & EcsTableHasChildOf) {
+        ecs_component_record_t *cr = flecs_table_get_childof_cr(world, table);
+        if (!cr) {
+            return 0;
+        }
+
+        return flecs_entities_get_alive(world, ECS_PAIR_SECOND(cr->id));
+    }
+
+    if (table->flags & EcsTableHasParent) {
+        const EcsParent *p = ecs_table_get_id(
+            world, table, ecs_id(EcsParent), ECS_RECORD_TO_ROW(r->row));
+        if (p) {
+            return p->value;
+        }
+    }
+
+    return 0;
+}
+
+bool flecs_entity_is_enabled(
+    const ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    world = ecs_get_world(world);
+
+    ecs_entity_t cur = entity;
+    int32_t depth = 0;
+    while (cur) {
+        ecs_record_t *r = flecs_entities_get(world, cur);
+        if (!r || !r->table) {
+            break;
+        }
+
+        if (flecs_entity_has_disabled(world, r)) {
+            return false;
+        }
+
+        cur = flecs_entity_get_parent_safe(world, r);
+
+        if (++ depth >= FLECS_DAG_DEPTH_MAX) {
+            ecs_abort(ECS_CYCLE_DETECTED, "cycle in ChildOf hierarchy");
+        }
+    }
+
+    return true;
+}
+
+static bool flecs_table_has_disabled_inherited(
+    const ecs_world_t *world,
+    const ecs_table_t *table)
+{
+    return ecs_table_has_id(world, table, EcsDisabledInherited);
+}
+
+/* Returns the entities that are direct children of an entity. */
+static void flecs_entity_get_children(
+    const ecs_world_t *world,
+    ecs_entity_t entity,
+    ecs_vec_t *children)
+{
+    if (!entity || entity == EcsWildcard || entity == EcsAny ||
+        entity == EcsThis || entity == EcsVariable)
+    {
+        return;
+    }
+
+    ecs_component_record_t *cr = flecs_components_get(
+        world, ecs_childof(entity));
+    if (!cr) {
+        return;
+    }
+
+    if (cr->flags & EcsIdOrderedChildren) {
+        ecs_vec_t *v = &cr->pair->ordered_children;
+        int32_t i, count = ecs_vec_count(v);
+        ecs_entity_t *elems = ecs_vec_first_t(v, ecs_entity_t);
+        for (i = 0; i < count; i ++) {
+            ecs_vec_append_t(NULL, children, ecs_entity_t)[0] = elems[i];
+        }
+
+        return;
+    }
+
+    ecs_table_cache_iter_t it;
+    if (flecs_table_cache_iter(&cr->cache, &it, EcsTableNotEmpty)) {
+        const ecs_table_cache_elem_t *elem;
+        while ((elem = flecs_table_cache_next(&it))) {
+            const ecs_entity_t *entities = ecs_table_entities(elem->table);
+            int32_t i, count = ecs_table_count(elem->table);
+            for (i = 0; i < count; i ++) {
+                ecs_vec_append_t(NULL, children, ecs_entity_t)[0] = entities[i];
+            }
+        }
+    }
+}
+
+/* Add or remove the DisabledInherited tag. Returns whether the tag changed. */
+static bool flecs_entity_set_disabled_inherited(
+    ecs_world_t *world,
+    ecs_entity_t e,
+    bool add)
+{
+    ecs_record_t *r = flecs_entities_get(world, e);
+    if (!r || !r->table) {
+        return false;
+    }
+
+    bool has = flecs_table_has_disabled_inherited(world, r->table);
+    if (has == add) {
+        return false;
+    }
+
+    /* These are internal state updates: don't start another propagation pass */
+    bool prev = world->in_enable_propagation;
+    world->in_enable_propagation = true;
+
+    if (add) {
+        ecs_add_id(world, e, EcsDisabledInherited);
+    } else {
+        ecs_remove_id(world, e, EcsDisabledInherited);
+    }
+
+    world->in_enable_propagation = prev;
+    return true;
+}
+
+/* Update the effective enabled state of an entity and its descendants. The
+ * effective state of an entity is disabled when it has the EcsDisabled tag, or
+ * when it descends from an entity that does. Descendants that are locally
+ * disabled keep their own EcsDisabled tag. */
+void flecs_update_enabled_state(
+    ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    ecs_record_t *r = flecs_entities_try(world, entity);
+    if (!r || !r->table) {
+        return;
+    }
+
+    /* Entities that are processed by this function. The entity itself is
+     * followed by all of its descendants. */
+    ecs_vec_t queue = {0};
+    ecs_vec_init_t(NULL, &queue, ecs_entity_t, 0);
+    ecs_vec_append_t(NULL, &queue, ecs_entity_t)[0] = entity;
+
+    int32_t i;
+    for (i = 0; i < ecs_vec_count(&queue); i ++) {
+        ecs_entity_t e = ecs_vec_get_t(&queue, ecs_entity_t, i)[0];
+        ecs_record_t *e_r = flecs_entities_try(world, e);
+        if (!e_r || !e_r->table) {
+            continue;
+        }
+
+        /* Get the children before changing the enabled state of the entity.
+         * Adding/removing a tag can move the entity to another table and can
+         * invoke observers that modify the hierarchy. */
+        flecs_entity_get_children(world, e, &queue);
+
+        ecs_table_t *table = e_r->table;
+        bool local_disabled = ecs_table_has_id(world, table, EcsDisabled);
+
+        bool ancestor_disabled = false;
+        ecs_entity_t parent = flecs_entity_get_parent_safe(world, e_r);
+        if (parent) {
+            ancestor_disabled = !flecs_entity_is_enabled(world, parent);
+        }
+
+        /* A locally disabled entity doesn't need the inherited tag: it is
+         * disabled by its own state, and removing the tag ensures that its
+         * local state is preserved when the ancestor is enabled again. */
+        bool need_inherited = ancestor_disabled && !local_disabled;
+        flecs_entity_set_disabled_inherited(world, e, need_inherited);
+    }
+
+    ecs_vec_fini_t(NULL, &queue, ecs_entity_t);
+}
+
+/* Test whether a table diff adds or removes an id that can change the effective
+ * enabled state of an entity or a subtree. */
+bool flecs_diff_affects_enabled_state(
+    const ecs_table_diff_t *diff)
+{
+    int32_t i;
+    for (i = 0; i < diff->added.count; i ++) {
+        ecs_id_t id = diff->added.array[i];
+        if (id == EcsDisabled || id == EcsDisabledInherited ||
+            id == ecs_id(EcsParent) || ECS_PAIR_FIRST(id) == EcsChildOf)
+        {
+            return true;
+        }
+    }
+
+    for (i = 0; i < diff->removed.count; i ++) {
+        ecs_id_t id = diff->removed.array[i];
+        if (id == EcsDisabled || id == EcsDisabledInherited ||
+            id == ecs_id(EcsParent) || ECS_PAIR_FIRST(id) == EcsChildOf)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void flecs_propagate_enabled_state(
+    ecs_world_t *world,
+    const ecs_entity_t *entities,
+    int32_t count,
+    const ecs_table_diff_t *diff,
+    ecs_flags32_t evt_flags)
+{
+    if (!flecs_diff_affects_enabled_state(diff)) {
+        return;
+    }
+
+    if (evt_flags & EcsEventNoPropagateEnabledState) {
+        return;
+    }
+
+    /* Propagation performs add/remove operations that themselves move entities
+     * and invoke actions. Prevent those from recursively starting a new
+     * propagation pass. */
+    if (world->in_enable_propagation) {
+        return;
+    }
+
+    /* During cleanup the hierarchy is being torn down, and there is no need to
+     * keep the enabled state consistent. */
+    if (world->flags & (EcsWorldQuit|EcsWorldFini)) {
+        return;
+    }
+
+    /* Entities can be moved by the propagation, so copy the ids before
+     * starting to modify tables. */
+    ecs_entity_t stack_ids[16];
+    ecs_entity_t *ids = stack_ids;
+    if (count > 16) {
+        ids = flecs_walloc_n(world, ecs_entity_t, count);
+    }
+    ecs_os_memcpy_n(ids, entities, ecs_entity_t, count);
+
+    world->in_enable_propagation = true;
+
+    int32_t i;
+    for (i = 0; i < count; i ++) {
+        ecs_entity_t e = ids[i];
+        ecs_record_t *r = flecs_entities_try(world, e);
+        if (!r || !r->table) {
+            continue;
+        }
+
+        flecs_update_enabled_state(world, e);
+    }
+
+    world->in_enable_propagation = false;
+
+    if (ids != stack_ids) {
+        flecs_wfree_n(world, ecs_entity_t, count, ids);
+    }
+}
+
 void ecs_enable(
     ecs_world_t *world,
     ecs_entity_t entity,
@@ -9664,6 +9993,18 @@ void ecs_enable(
 
 error:
     return;
+}
+
+bool ecs_is_enabled_entity(
+    const ecs_world_t *world,
+    ecs_entity_t entity)
+{
+    ecs_check(world != NULL, ECS_INVALID_PARAMETER, NULL);
+    flecs_assert_entity_valid(world, entity, "is_enabled");
+
+    return flecs_entity_is_enabled(world, entity);
+error:
+    return false;
 }
 
 static void ecs_type_str_buf(
@@ -16052,6 +16393,7 @@ static void flecs_remove_from_table(
         ecs_flags32_t removed_flags = table->flags & EcsTableRemoveEdgeFlags;
         int32_t d = 0, r = 0;
         bool removed_isa = false;
+        bool removed_enabled_state = false;
         for (t = 0; t < type_count; t ++) {
             ecs_id_t id = type->array[t];
             if (remove[t]) {
@@ -16063,6 +16405,8 @@ static void flecs_remove_from_table(
                     } else if (first == EcsIsA) {
                         removed_isa = true;
                     }
+                } else if (id == EcsDisabled || id == EcsDisabledInherited) {
+                    removed_enabled_state = true;
                 }
             } else {
                 dst_array[d ++] = id;
@@ -16091,11 +16435,34 @@ static void flecs_remove_from_table(
                 .removed_flags = removed_flags
             };
 
-            flecs_actions_move_remove(world, table, dst_table, 0, table_count, &diff, 0);
+            flecs_actions_move_remove(world, table, dst_table, 0, table_count,
+                &diff, 0);
             ecs_log_pop_3();
         }
 
-        flecs_table_merge(world, dst_table, table);
+        if (removed_enabled_state) {
+            /* Copy entity ids before merging: the merge moves the entities to
+             * the destination table, after which their effective enabled state
+             * has to be recomputed. */
+            int32_t e, entity_count = table_count;
+            ecs_entity_t *entities = flecs_walloc_n(
+                world, ecs_entity_t, entity_count);
+            ecs_os_memcpy_n(entities, ecs_table_entities(table),
+                ecs_entity_t, entity_count);
+
+            flecs_table_merge(world, dst_table, table);
+
+            for (e = 0; e < entity_count; e ++) {
+                ecs_record_t *rec = flecs_entities_try(world, entities[e]);
+                if (rec && rec->table) {
+                    flecs_update_enabled_state(world, entities[e]);
+                }
+            }
+
+            flecs_wfree_n(world, ecs_entity_t, entity_count, entities);
+        } else {
+            flecs_table_merge(world, dst_table, table);
+        }
 
         flecs_wfree_n(world, ecs_id_t, dst_count, dst_array);
         flecs_wfree_n(world, ecs_id_t, remove_count, removed);
@@ -19455,6 +19822,7 @@ const ecs_entity_t EcsFlecsCore =                   FLECS_HI_COMPONENT_ID + 5;
 const ecs_entity_t EcsModule =                      FLECS_HI_COMPONENT_ID + 7;
 const ecs_entity_t EcsDisabled =                    FLECS_HI_COMPONENT_ID + 10;
 const ecs_entity_t EcsNotQueryable =                FLECS_HI_COMPONENT_ID + 11;
+const ecs_entity_t EcsDisabledInherited =           FLECS_HI_COMPONENT_ID + 12;
 
 const ecs_entity_t EcsFlag =                        FLECS_HI_COMPONENT_ID + 13;
 
@@ -29539,7 +29907,10 @@ static void flecs_table_init_flags(
 
         if (id == EcsModule) {
             table->flags |= EcsTableHasModule;
-        } else if (id == EcsDisabled) {
+        } else if (id == EcsDisabled || id == EcsDisabledInherited) {
+            /* Entities with EcsDisabledInherited are disabled by an ancestor,
+             * and must be filtered out by queries/systems in the same way as
+             * entities that have the EcsDisabled tag. */
             table->flags |= EcsTableIsDisabled;
         } else if (id == EcsNotQueryable) {
             table->flags |= EcsTableNotQueryable;

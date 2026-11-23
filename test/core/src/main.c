@@ -206,6 +206,13 @@ void Entity_entity_w_existing_id_and_double_dot(void);
 void Entity_entity_w_large_id_name(void);
 void Entity_toggle_component(void);
 void Entity_toggle_component_before_add(void);
+void Entity_enable_parent_disables_children(void);
+void Entity_enable_parent_keeps_local_state(void);
+void Entity_enable_nested(void);
+void Entity_enable_created_while_parent_disabled(void);
+void Entity_enable_move_into_disabled_parent(void);
+void Entity_enable_move_disabled_child_into_enabled_parent(void);
+void Entity_disable_inherited_from_parent(void);
 
 // Testsuite 'Each'
 void Each_each_tag(void);
@@ -4589,6 +4596,34 @@ bake_test_case Entity_testcases[] = {
     {
         "toggle_component_before_add",
         Entity_toggle_component_before_add
+    },
+    {
+        "enable_parent_disables_children",
+        Entity_enable_parent_disables_children
+    },
+    {
+        "enable_parent_keeps_local_state",
+        Entity_enable_parent_keeps_local_state
+    },
+    {
+        "enable_nested",
+        Entity_enable_nested
+    },
+    {
+        "enable_created_while_parent_disabled",
+        Entity_enable_created_while_parent_disabled
+    },
+    {
+        "enable_move_into_disabled_parent",
+        Entity_enable_move_into_disabled_parent
+    },
+    {
+        "enable_move_disabled_child_into_enabled_parent",
+        Entity_enable_move_disabled_child_into_enabled_parent
+    },
+    {
+        "disable_inherited_from_parent",
+        Entity_disable_inherited_from_parent
     }
 };
 
@@ -18711,7 +18746,7 @@ static bake_test_suite suites[] = {
         "Entity",
         NULL,
         NULL,
-        116,
+        123,
         Entity_testcases
     },
     {

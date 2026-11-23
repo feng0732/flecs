@@ -1289,7 +1289,7 @@ Toggle an entity or component.
 PUT /toggle/<path>?enable=[true|false][&component=<component>]
 ```
 
-When an entity is toggled, the `Disabled` tag is added or removed. When a component is toggled, the `ecs_enable_id` operation is invoked. A component toggle request will fail if the component does not have the `CanToggle` trait.
+When an entity is toggled, the `Disabled` tag is added or removed. Disabling an entity also disables its descendants in the `ChildOf` hierarchy (see the entities manual). When a component is toggled, the `ecs_enable_id` operation is invoked. A component toggle request will fail if the component does not have the `CanToggle` trait.
 
 #### Examples
 The following example disables entity `Sun.Earth`:

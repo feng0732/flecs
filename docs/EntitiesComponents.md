@@ -1149,6 +1149,53 @@ Enabling or disabling a prefab affects the prefab entity itself. It does not
 enable or disable the ids stored on the prefab, its base prefabs, or its
 children.
 
+#### Disabling hierarchies
+
+Disabling an entity also disables its descendants in the `ChildOf` hierarchy.
+This allows for turning a complete subtree (for example a scene node, or a
+module with its systems) on or off with a single operation. Enabled descendants
+of a disabled entity receive the internal `EcsDisabledInherited` tag, which
+causes them to be skipped by queries and systems, in the same way as entities
+that have the `EcsDisabled` tag.
+
+The disabled state of a node is _local_ to the node. Disabling a parent does not
+add `EcsDisabled` to its descendants, and enabling the parent again only
+restores the nodes that were enabled before. This means that:
+
+- A node that was explicitly disabled stays disabled when its parent is
+  reenabled.
+- A node that is created while an ancestor is disabled immediately becomes
+  disabled (it receives `EcsDisabledInherited`).
+- A node that is moved into a disabled hierarchy becomes disabled, and a node
+  that is moved out again becomes enabled (unless it was explicitly disabled).
+- A descendant that only carries `EcsDisabledInherited` can be explicitly
+  enabled with `ecs_enable(world, child, true)`, but this does not make it
+  effectively enabled while an ancestor is disabled.
+
+`ecs_is_enabled_entity` returns the effective enabled state of an entity, taking
+ancestors into account. The local state of an entity can be tested with
+`ecs_has_id(world, e, EcsDisabled)`.
+
+```c
+ecs_entity_t parent = ecs_entity(world, { .name = "parent" });
+ecs_entity_t child_a = ecs_entity(world, { .name = "a", .parent = parent });
+ecs_entity_t child_b = ecs_entity(world, { .name = "b", .parent = parent });
+
+ecs_enable(world, child_b, false);
+
+ecs_enable(world, parent, false);
+
+ecs_is_enabled_entity(world, child_a); // false (disabled by parent)
+ecs_is_enabled_entity(world, child_b); // false (disabled by self and parent)
+ecs_has_id(world, child_a, EcsDisabled); // false (local state is kept)
+ecs_has_id(world, child_b, EcsDisabled); // true
+
+ecs_enable(world, parent, true);
+
+ecs_is_enabled_entity(world, child_a); // true (restored)
+ecs_is_enabled_entity(world, child_b); // false (stays locally disabled)
+```
+
 Entity disabling works by adding a `Disabled` tag to the entity, which can also be added manually with regular add/remove operations. An example:
 
 <div class="flecs-snippet-tabs">

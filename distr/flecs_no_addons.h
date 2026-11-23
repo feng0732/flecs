@@ -606,6 +606,7 @@ extern "C" {
 #define EcsEventTableOnly              (1u << 20u) /* Table event (no data, same as iter flags). */
 #define EcsEventNoOnSet                (1u << 16u) /* Don't emit OnSet for inherited IDs. */
 #define EcsEventLifecycle              (1u << 23u)
+#define EcsEventNoPropagateEnabledState (1u << 24u) /* Internal state update, don't trigger enabled state propagation. */
 
 ////////////////////////////////////////////////////////////////////////////////
 //// Query flags (used by ecs_query_t::flags)
@@ -6381,8 +6382,23 @@ FLECS_API extern const ecs_entity_t EcsModule;
  * ignored by queries, unless #EcsPrefab is explicitly queried for. */
 
 /** When this tag is added to an entity, it is skipped by queries, unless
- * #EcsDisabled is explicitly queried for. */
+ * #EcsDisabled is explicitly queried for.
+ *
+ * Adding or removing this tag only changes the local (own) enabled state of an
+ * entity. The effective enabled state of an entity is disabled when its own
+ * state is disabled, or when it disabled by an ancestor in the `ChildOf`
+ * hierarchy (see #EcsDisabledInherited). */
 FLECS_API extern const ecs_entity_t EcsDisabled;
+
+/** Internal tag that propagates a disabled state to children.
+ *
+ * When a parent becomes effectively disabled, all of its descendants that are
+ * still enabled receive this tag. Descendants that already had the
+ * #EcsDisabled tag keep it (their local state is preserved). When the parent is
+ * enabled again, only descendants that were enabled before (and that weren't
+ * explicitly disabled) lose this tag. Applications should not add or remove
+ * this tag directly. */
+FLECS_API extern const ecs_entity_t EcsDisabledInherited;
 
 /** Trait added to entities that should never be returned by queries. Reserved
  * for internal entities that have special meaning to the query engine, such as
@@ -7474,6 +7490,14 @@ void ecs_remove_all(
  * #EcsDisabled tag. A disabled entity will not be matched with any systems,
  * unless the system explicitly specifies the #EcsDisabled tag.
  *
+ * Disabling an entity also disables its descendants in the `ChildOf` hierarchy.
+ * This is implemented with the internal #EcsDisabledInherited tag: descendants
+ * that weren't locally disabled receive that tag. Disabled descendants are
+ * skipped by queries and systems, just like entities that carry #EcsDisabled.
+ * Enabling an entity again removes #EcsDisabledInherited from its descendants,
+ * which restores the nodes that were enabled before. Descendants with the
+ * #EcsDisabled tag are not affected, so their local disabled state is kept.
+ *
  * @param world The world.
  * @param entity The entity to enable or disable.
  * @param enabled true to enable the entity, false to disable.
@@ -7483,6 +7507,22 @@ void ecs_enable(
     ecs_world_t *world,
     ecs_entity_t entity,
     bool enabled);
+
+/** Test if an entity is effectively enabled.
+ * An entity is effectively enabled when it doesn't have the #EcsDisabled tag
+ * and isn't disabled by an ancestor in the `ChildOf` hierarchy. This is the
+ * state that determines whether an entity is matched with queries and systems.
+ * To test only the local state of an entity, use `ecs_has_id(world, entity,
+ * EcsDisabled)` and `ecs_has_id(world, entity, EcsDisabledInherited)`.
+ *
+ * @param world The world.
+ * @param entity The entity.
+ * @return True if the entity is effectively enabled, otherwise false.
+ */
+FLECS_API
+bool ecs_is_enabled_entity(
+    const ecs_world_t *world,
+    ecs_entity_t entity);
 
 /** Enable or disable a component.
  * Enabling or disabling a component does not add or remove a component from an
