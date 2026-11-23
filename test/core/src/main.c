@@ -3806,6 +3806,21 @@ void Error_log_collect_errors_restores_level(void);
 void StackAlloc_init_fini(void);
 void StackAlloc_multiple_overlapping_cursors(void);
 
+// Testsuite 'Snapshot'
+void Snapshot_take_restore_roundtrip(void);
+void Snapshot_restore_is_idempotent(void);
+void Snapshot_restore_repeat_after_change(void);
+void Snapshot_empty(void);
+void Snapshot_invalid_snapshot(void);
+void Snapshot_dangling_snapshot(void);
+void Snapshot_restore_recycled_entity(void);
+void Snapshot_version_mismatch(void);
+void Snapshot_observers_queries_survive(void);
+void Snapshot_sparse_toggle(void);
+void Snapshot_deterministic_ids(void);
+void Snapshot_dont_fragment(void);
+void Snapshot_delete_extra_entities(void);
+
 bake_test_case Id_testcases[] = {
     {
         "long_entity_from_str",
@@ -18694,6 +18709,61 @@ bake_test_case StackAlloc_testcases[] = {
     }
 };
 
+bake_test_case Snapshot_testcases[] = {
+    {
+        "take_restore_roundtrip",
+        Snapshot_take_restore_roundtrip
+    },
+    {
+        "restore_is_idempotent",
+        Snapshot_restore_is_idempotent
+    },
+    {
+        "restore_repeat_after_change",
+        Snapshot_restore_repeat_after_change
+    },
+    {
+        "empty",
+        Snapshot_empty
+    },
+    {
+        "invalid_snapshot",
+        Snapshot_invalid_snapshot
+    },
+    {
+        "dangling_snapshot",
+        Snapshot_dangling_snapshot
+    },
+    {
+        "restore_recycled_entity",
+        Snapshot_restore_recycled_entity
+    },
+    {
+        "version_mismatch",
+        Snapshot_version_mismatch
+    },
+    {
+        "observers_queries_survive",
+        Snapshot_observers_queries_survive
+    },
+    {
+        "sparse_toggle",
+        Snapshot_sparse_toggle
+    },
+    {
+        "deterministic_ids",
+        Snapshot_deterministic_ids
+    },
+    {
+        "dont_fragment",
+        Snapshot_dont_fragment
+    },
+    {
+        "delete_extra_entities",
+        Snapshot_delete_extra_entities
+    }
+};
+
 const char* Sparse_fragment_param[] = {"yes", "no"};
 bake_test_param Sparse_params[] = {
     {"fragment", (char**)Sparse_fragment_param, 2}
@@ -19037,9 +19107,15 @@ static bake_test_suite suites[] = {
         NULL,
         2,
         StackAlloc_testcases
+    }, {
+        "Snapshot",
+        NULL,
+        NULL,
+        13,
+        Snapshot_testcases
     }
 };
 
 int main(int argc, char *argv[]) {
-    return bake_test_run("core", argc, argv, suites, 48);
+    return bake_test_run("core", argc, argv, suites, 49);
 }

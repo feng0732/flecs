@@ -502,7 +502,10 @@ world.component<Position>().add(flecs::DontFragment).add(flecs::Exclusive);
 ```
 
 ## Snapshots
-The snapshot feature has been removed from v4.
+The old snapshot API (`ecs_snapshot_*` in v3) has been replaced. Snapshots are
+available again through the `FLECS_SNAPSHOT` addon with a new, diff-based API
+(`ecs_snapshot_take`, `ecs_snapshot_restore`, `ecs_snapshot_free`). See the
+[Snapshots manual](Snapshots.md) for details.
 
 ## Tree flattening
 The tree flattening feature (`ecs_flatten`) has been removed. It will be replaced eventually with a new implementation that addresses the shortcomings of the old feature.
@@ -514,7 +517,7 @@ The following addons have been removed/merged with other addons:
 - `FLECS_PLECS` (renamed to `FLECS_SCRIPT`)
 - `FLECS_EXPR` (merged with `FLECS_SCRIPT`)
 - `FLECS_PARSER` (merged with `FLECS_SCRIPT`)
-- `FLECS_SNAPSHOT` (feature got removed)
+- `FLECS_SNAPSHOT` (replaced with a new snapshot implementation; see the [Snapshots manual](Snapshots.md))
 - `FLECS_RULES` (merged with queries)
 - `MONITOR` (merged with `STATS`)
 

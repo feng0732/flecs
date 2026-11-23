@@ -3910,6 +3910,23 @@
                 "init_fini",
                 "multiple_overlapping_cursors"
             ]
+        }, {
+            "id": "Snapshot",
+            "testcases": [
+                "take_restore_roundtrip",
+                "restore_is_idempotent",
+                "restore_repeat_after_change",
+                "empty",
+                "invalid_snapshot",
+                "dangling_snapshot",
+                "restore_recycled_entity",
+                "version_mismatch",
+                "observers_queries_survive",
+                "sparse_toggle",
+                "deterministic_ids",
+                "dont_fragment",
+                "delete_extra_entities"
+            ]
         }]
     }
 }

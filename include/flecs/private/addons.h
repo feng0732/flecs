@@ -117,6 +117,13 @@
 #include "../addons/units.h"
 #endif
 
+#ifdef FLECS_SNAPSHOT
+#ifdef FLECS_NO_SNAPSHOT
+#error "FLECS_NO_SNAPSHOT failed: SNAPSHOT is required by other addons"
+#endif
+#include "../addons/snapshot.h"
+#endif
+
 #ifdef FLECS_SCRIPT_MATH
 #ifdef FLECS_NO_SCRIPT_MATH
 #error "FLECS_NO_SCRIPT_MATH failed: SCRIPT_MATH is required by other addons"

@@ -121,6 +121,30 @@ int32_t flecs_entity_index_not_alive_count(
 void flecs_entity_index_clear(
     ecs_entity_index_t *index);
 
+/* Snapshot/restore helpers for the dense entity list. */
+
+/* Return a copy of the internal dense id array (including the leading 0). */
+uint64_t* flecs_entity_index_copy_dense(
+    const ecs_entity_index_t *index,
+    int32_t *count_out);
+
+/* Restore the entity index to the state of a snapshot's dense array.
+ *
+ * This restores which ids are alive, the dense issue order (so recycled ids are
+ * handed out deterministically) and the max issued id. Entities that are alive
+ * in the index but are not part of the snapshot dense array (for example
+ * observers/queries/systems created after the snapshot was taken) are
+ * *preserved*: they are kept alive and appended after the snapshot entries so
+ * that their table/row administration remains valid, and the max issued id is
+ * raised to at least their id to avoid collisions. When no such entities exist
+ * the index is restored to exactly the snapshot state. */
+void flecs_entity_index_restore_dense(
+    ecs_entity_index_t *index,
+    const uint64_t *dense,
+    int32_t dense_count,
+    int32_t alive_count,
+    uint32_t max_id);
+
 /* Shrink entity index */
 void flecs_entity_index_shrink(
     ecs_entity_index_t *index);

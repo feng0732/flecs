@@ -413,3 +413,188 @@ const uint64_t* flecs_entity_index_ids(
 {
     return ecs_vec_get_t(&index->dense, uint64_t, 1);
 }
+
+uint64_t* flecs_entity_index_copy_dense(
+    const ecs_entity_index_t *index,
+    int32_t *count_out)
+{
+    int32_t count = ecs_vec_count(&index->dense);
+    uint64_t *result = ecs_os_malloc_n(uint64_t, count);
+    uint64_t *dense = ecs_vec_first_t(
+        ECS_CONST_CAST(ecs_vec_t*, &index->dense), uint64_t);
+    ecs_os_memcpy_n(result, dense, uint64_t, count);
+    if (count_out) {
+        *count_out = count;
+    }
+    return result;
+}
+
+void flecs_entity_index_restore_dense(
+    ecs_entity_index_t *index,
+    const uint64_t *dense,
+    int32_t dense_count,
+    int32_t alive_count,
+    uint32_t max_id)
+{
+    ecs_assert(dense != NULL, ECS_INVALID_PARAMETER, NULL);
+    ecs_assert(dense_count > 0, ECS_INVALID_PARAMETER, NULL);
+    ecs_assert(alive_count >= 1 && alive_count <= dense_count,
+        ECS_INVALID_PARAMETER, NULL);
+
+    /* Index 0 of the dense array is a sentinel slot that is never read by the
+     * rest of the entity index (all consumers start at index 1). It is also not
+     * initialized, so it must never be treated as a real id. All loops below
+     * therefore start at index 1 and the sentinel is reset to 0. */
+
+    /* Collect ids that are alive in the index now but are not part of the
+     * restored (snapshot) alive set. These are entities created after the
+     * snapshot was taken (typically observers/queries/systems). They must stay
+     * alive so that their registration administration remains valid. Ids whose
+     * low 32 bits collide with a snapshot entity are not preserved: the
+     * snapshot wins to keep user-entity determinism. */
+    ecs_vec_t preserved;
+    ecs_vec_init_t(NULL, &preserved, uint64_t, 0);
+
+    int32_t old_alive = index->alive_count;
+    int32_t old_count = ecs_vec_count(&index->dense);
+    uint64_t *old_ids = ecs_vec_first_t(&index->dense, uint64_t);
+    int32_t k;
+    for (k = 1; k < old_alive && k < old_count; k ++) {
+        uint64_t id = old_ids[k];
+        if (!id) {
+            continue;
+        }
+
+        bool in_snapshot = false, low_collision = false;
+        int32_t i;
+        for (i = 1; i < alive_count; i ++) {
+            uint64_t sid = dense[i];
+            if (sid == id) {
+                in_snapshot = true;
+                break;
+            }
+            if ((uint32_t)sid == (uint32_t)id) {
+                low_collision = true;
+            }
+        }
+
+        if (!in_snapshot && !low_collision) {
+            ecs_vec_append_t(NULL, &preserved, uint64_t)[0] = id;
+        }
+    }
+
+    /* Reset records of ids that are neither part of the snapshot nor preserved.
+     * These no longer exist after the restore. */
+    for (k = 1; k < old_count; k ++) {
+        uint64_t id = old_ids[k];
+        if (!id) {
+            continue;
+        }
+
+        bool keep = false;
+        int32_t i;
+        for (i = 1; i < alive_count; i ++) {
+            if (dense[i] == id) {
+                keep = true;
+                break;
+            }
+        }
+        if (!keep) {
+            int32_t p, p_count = ecs_vec_count(&preserved);
+            uint64_t *pit = ecs_vec_first_t(&preserved, uint64_t);
+            for (p = 0; p < p_count; p ++) {
+                if (pit[p] == id) {
+                    keep = true;
+                    break;
+                }
+            }
+        }
+
+        if (!keep) {
+            ecs_record_t *r = flecs_entity_index_try_get_any(index, id);
+            if (r) {
+                r->dense = 0;
+                r->table = NULL;
+                r->row = 0;
+            }
+        }
+    }
+
+    /* Build the new dense array: sentinel, snapshot alive entries, then
+     * preserved ids, then the snapshot's recycled (not alive) tail, excluding
+     * entries whose low 32 bits collide with a retained (alive or preserved) id.
+     * Keeping the snapshot's recycled tail identical reproduces the exact id
+     * recycle order of the original run. */
+    int32_t preserved_count = ecs_vec_count(&preserved);
+    int32_t alive_total = alive_count + preserved_count;
+
+    ecs_vec_t recycled;
+    ecs_vec_init_t(NULL, &recycled, uint64_t, 0);
+    int32_t rc;
+    for (rc = alive_count; rc < dense_count; rc ++) {
+        uint64_t id = dense[rc];
+        if (!id) {
+            continue;
+        }
+        bool collision = false;
+        int32_t i;
+        for (i = 1; i < alive_total; i ++) {
+            uint64_t keep_id = (i < alive_count)
+                ? dense[i]
+                : ecs_vec_get_t(&preserved, uint64_t, i - alive_count)[0];
+            if ((uint32_t)keep_id == (uint32_t)id) {
+                collision = true;
+                break;
+            }
+        }
+        if (!collision) {
+            ecs_vec_append_t(NULL, &recycled, uint64_t)[0] = id;
+        }
+    }
+
+    int32_t recycled_count = ecs_vec_count(&recycled);
+    int32_t new_count = alive_total + recycled_count;
+    ecs_vec_set_count_t(index->allocator, &index->dense, uint64_t, new_count);
+    uint64_t *ids = ecs_vec_first_t(&index->dense, uint64_t);
+    ids[0] = 0; /* sentinel */
+    if (alive_count > 1) {
+        ecs_os_memcpy_n(&ids[1], &dense[1], uint64_t, alive_count - 1);
+    }
+    if (preserved_count) {
+        uint64_t *pit = ecs_vec_first_t(&preserved, uint64_t);
+        ecs_os_memcpy_n(&ids[alive_count], pit, uint64_t, preserved_count);
+    }
+    if (recycled_count) {
+        uint64_t *rit = ecs_vec_first_t(&recycled, uint64_t);
+        ecs_os_memcpy_n(&ids[alive_total], rit, uint64_t, recycled_count);
+    }
+    ecs_vec_fini_t(NULL, &recycled, uint64_t);
+    ecs_vec_fini_t(NULL, &preserved, uint64_t);
+
+    int32_t i;
+    for (i = 1; i < new_count; i ++) {
+        uint64_t id = ids[i];
+        if (!id) {
+            continue;
+        }
+        /* Ensure a page/record exists: the entity may have been deleted since
+         * the snapshot was taken. */
+        ecs_record_t *r = flecs_entity_index_try_get_any(index, id);
+        if (!r) {
+            ecs_entity_index_page_t *page = flecs_entity_index_ensure_page(
+                index, (uint32_t)id);
+            r = &page->records[(uint32_t)id & FLECS_ENTITY_PAGE_MASK];
+        }
+        r->dense = i;
+    }
+
+    index->alive_count = alive_total;
+
+    /* Never go below the snapshot's max id nor below a retained id. */
+    uint32_t result_max = max_id;
+    for (i = 1; i < alive_total; i ++) {
+        uint32_t low = (uint32_t)ids[i];
+        result_max = low > result_max ? low : result_max;
+    }
+    index->max_id = result_max;
+}

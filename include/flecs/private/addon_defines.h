@@ -108,6 +108,9 @@
 #ifdef FLECS_NO_JOURNAL
 #undef FLECS_JOURNAL
 #endif
+#ifdef FLECS_NO_SNAPSHOT
+#undef FLECS_SNAPSHOT
+#endif
 
 /* Resolve addon dependencies before addon-dependent API declarations. The
  * order of these blocks follows the addon dependency graph, from addons with

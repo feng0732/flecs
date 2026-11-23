@@ -42,6 +42,7 @@
                 "FLECS_SCRIPT_SHELL",
                 "FLECS_SYSTEM",
                 "FLECS_STATS",
+                "FLECS_SNAPSHOT",
                 "FLECS_TIMER",
                 "FLECS_UNITS",
                 "FLECS_SANITIZE"
